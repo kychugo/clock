@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HKT Desk Clock & Tools</title>
+    <style>
+        /* Base Styles & Typography */
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Share Tech Mono', monospace;
+            color: #fff;
+            background-color: #050505;
+            transition: background 1s ease, color 1s ease;
+            overflow: hidden;
+        }
+
+        /* Hide cursor when idle */
+        body.idle { cursor: none; }
+
+        /* General View Containers */
+        .view {
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            z-index: 10;
+            text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        }
+        .view.active { display: flex; }
+
+        .time {
+            font-size: 13vw;
+            line-height: 1;
+            letter-spacing: 2px;
+        }
+
+        .date {
+            font-size: 2.5vw;
+            color: #888;
+            margin-top: 10px;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        /* Input Styles for Timer */
+        .timer-inputs {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 10vw;
+            margin-bottom: 20px;
+        }
+        input[type="number"] {
+            background: transparent;
+            border: none;
+            border-bottom: 3px solid #555;
+            color: #fff;
+            font-size: 10vw;
+            font-family: 'Share Tech Mono', monospace;
+            width: 2.2ch;
+            text-align: center;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        input[type="number"]:focus { border-color: #fff; }
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        
+        .timer-labels {
+            font-size: 2vw;
+            color: #888;
+        }
+
+        /* Controls / UI that fade when idle */
+        .fade-ui {
+            position: absolute;
+            display: flex;
+            gap: 15px;
+            z-index: 20;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 15px 25px;
+            border-radius: 50px;
+            border: 1px solid #333;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Top Nav & Bottom Controls */
+        .top-nav { top: 30px; }
+        .bottom-controls { bottom: 30px; }
+        .action-btns { position: relative; background: none; border: none; padding: 0; margin-top: 30px;}
+
+        body.idle .fade-ui {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        button {
+            background: transparent;
+            color: #aaa;
+            border: 1px solid #555;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        button:hover, button.active {
+            background: #fff;
+            color: #000;
+            border-color: #fff;
+        }
+
+        .alert-text { color: #ff3333 !important; text-shadow: 0 0 20px rgba(255, 51, 51, 0.8) !important; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        /* --- Background Styles & Animations --- */
+        body.bg-black { background-color: #000; }
+        
+        body.bg-aurora {
+            background: linear-gradient(-45deg, #0a1128, #1c0a28, #0a2818, #000000);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+        @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+
+        body.bg-purple {
+            background: radial-gradient(circle, #2a0845 0%, #000000 80%);
+            animation: breathe 8s infinite alternate ease-in-out;
+        }
+        @keyframes breathe { 0% { transform: scale(1); } 100% { transform: scale(1.1); } }
+
+        body.bg-tech {
+            background-color: #050505;
+            background-image: linear-gradient(rgba(0, 255, 0, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 0, 0.05) 1px, transparent 1px);
+            background-size: 30px 30px;
+            animation: scrollGrid 20s linear infinite;
+        }
+        body.bg-tech .time, body.bg-tech input { color: #0f0; text-shadow: 0 0 10px #0f0; }
+        body.bg-tech .date { color: #070; }
+        @keyframes scrollGrid { 0% { background-position: 0px 0px; } 100% { background-position: 60px 60px; } }
+    </style>
+</head>
+<body class="bg-black">
+
+    <!-- Top Navigation -->
+    <div class="top-nav fade-ui">
+        <button onclick="switchView('clock-view')" class="nav-btn active" data-target="clock-view">Clock</button>
+        <button onclick="switchView('timer-view')" class="nav-btn" data-target="timer-view">Timer</button>
+        <button onclick="switchView('stopwatch-view')" class="nav-btn" data-target="stopwatch-view">Stopwatch</button>
+    </div>
+
+    <!-- 1. CLOCK VIEW -->
+    <div id="clock-view" class="view active">
+        <div class="time" id="time">00:00:00 AM</div>
+        <div class="date" id="date">Loading...</div>
+    </div>
+
+    <!-- 2. TIMER VIEW -->
+    <div id="timer-view" class="view">
+        <div id="timer-input-container">
+            <div class="timer-inputs">
+                <div><input type="number" id="tmr-h" value="00" min="0" max="99" onclick="this.select()"><div class="timer-labels">HRS</div></div>:
+                <div><input type="number" id="tmr-m" value="05" min="0" max="59" onclick="this.select()"><div class="timer-labels">MIN</div></div>:
+                <div><input type="number" id="tmr-s" value="00" min="0" max="59" onclick="this.select()"><div class="timer-labels">SEC</div></div>
+            </div>
+        </div>
+        <div id="timer-display-container" class="time" style="display: none;">00:00:00</div>
+        
+        <div class="action-btns fade-ui">
+            <button onclick="startTimer()">Start</button>
+            <button onclick="pauseTimer()">Pause</button>
+            <button onclick="resetTimer()">Reset</button>
+        </div>
+    </div>
+
+    <!-- 3. STOPWATCH VIEW -->
+    <div id="stopwatch-view" class="view">
+        <div class="time" id="sw-display">00:00:00.00</div>
+        <div class="action-btns fade-ui">
+            <button onclick="startSW()">Start</button>
+            <button onclick="pauseSW()">Pause</button>
+            <button onclick="resetSW()">Reset</button>
+        </div>
+    </div>
+
+    <!-- Bottom Settings -->
+    <div class="bottom-controls fade-ui" id="controls">
+        <button onclick="setBackground('bg-black')" class="bg-btn active" data-bg="bg-black">Deep Black</button>
+        <button onclick="setBackground('bg-aurora')" class="bg-btn" data-bg="bg-aurora">Aurora</button>
+        <button onclick="setBackground('bg-purple')" class="bg-btn" data-bg="bg-purple">Breathing</button>
+        <button onclick="setBackground('bg-tech')" class="bg-btn" data-bg="bg-tech">Tech Grid</button>
+        <button onclick="toggleFullScreen()" style="margin-left: 15px; border-color: #888;">[ Fullscreen ]</button>
+    </div>
+
+    <script>
+        // --- Helper Function ---
+        function pad(n) { return n.toString().padStart(2, '0'); }
+
+        // --- Navigation Logic ---
+        function switchView(viewId) {
+            document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+            
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-target') === viewId);
+            });
+        }
+
+        // --- Clock Logic (HKT - 12 Hour) ---
+        function updateClock() {
+            const now = new Date();
+            // 12-hour format specific for Hong Kong timezone
+            const timeOptions = { timeZone: 'Asia/Hong_Kong', hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' };
+            const dateOptions = { timeZone: 'Asia/Hong_Kong', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+
+            const timeString = new Intl.DateTimeFormat('en-US', timeOptions).format(now);
+            const dateString = new Intl.DateTimeFormat('en-US', dateOptions).format(now);
+
+            document.getElementById('time').innerText = timeString;
+            document.getElementById('date').innerText = dateString + " (HKT)";
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // --- Timer Logic ---
+        let tmrInterval, tmrEndTime;
+        let tmrRemaining = 0; 
+        let isTmrRunning = false;
+
+        function startTimer() {
+            if (isTmrRunning) return;
+
+            const inputContainer = document.getElementById('timer-input-container');
+            const displayContainer = document.getElementById('timer-display-container');
+            displayContainer.classList.remove('alert-text');
+
+            if (tmrRemaining === 0) {
+                let h = parseInt(document.getElementById('tmr-h').value) || 0;
+                let m = parseInt(document.getElementById('tmr-m').value) || 0;
+                let s = parseInt(document.getElementById('tmr-s').value) || 0;
+                tmrRemaining = (h * 3600 + m * 60 + s) * 1000;
+            }
+
+            if (tmrRemaining <= 0) return;
+
+            inputContainer.style.display = 'none';
+            displayContainer.style.display = 'block';
+            
+            isTmrRunning = true;
+            tmrEndTime = Date.now() + tmrRemaining;
+
+            tmrInterval = setInterval(() => {
+                tmrRemaining = tmrEndTime - Date.now();
+                if (tmrRemaining <= 0) {
+                    tmrRemaining = 0;
+                    pauseTimer();
+                    displayContainer.classList.add('alert-text'); // Flash red when done
+                }
+                updateTimerDisplay();
+            }, 50);
+        }
+
+        function pauseTimer() {
+            clearInterval(tmrInterval);
+            isTmrRunning = false;
+        }
+
+        function resetTimer() {
+            pauseTimer();
+            tmrRemaining = 0;
+            document.getElementById('timer-input-container').style.display = 'block';
+            const displayContainer = document.getElementById('timer-display-container');
+            displayContainer.style.display = 'none';
+            displayContainer.classList.remove('alert-text');
+        }
+
+        function updateTimerDisplay() {
+            let totalSec = Math.ceil(tmrRemaining / 1000);
+            let h = Math.floor(totalSec / 3600);
+            let m = Math.floor((totalSec % 3600) / 60);
+            let s = totalSec % 60;
+            document.getElementById('timer-display-container').innerText = `${pad(h)}:${pad(m)}:${pad(s)}`;
+        }
+
+        // --- Stopwatch Logic ---
+        let swInterval, swStartTime = 0, swElapsedTime = 0, isSWRunning = false;
+
+        function startSW() {
+            if (isSWRunning) return;
+            isSWRunning = true;
+            swStartTime = Date.now() - swElapsedTime;
+            swInterval = setInterval(() => {
+                swElapsedTime = Date.now() - swStartTime;
+                updateSWDisplay();
+            }, 10);
+        }
+
+        function pauseSW() {
+            clearInterval(swInterval);
+            isSWRunning = false;
+        }
+
+        function resetSW() {
+            pauseSW();
+            swElapsedTime = 0;
+            updateSWDisplay();
+        }
+
+        function updateSWDisplay() {
+            let totalSec = Math.floor(swElapsedTime / 1000);
+            let h = Math.floor(totalSec / 3600);
+            let m = Math.floor((totalSec % 3600) / 60);
+            let s = totalSec % 60;
+            let ms = Math.floor((swElapsedTime % 1000) / 10);
+            
+            // Format changes dynamically (hides hours if 0 to look cleaner)
+            if(h > 0) {
+                document.getElementById('sw-display').innerText = `${pad(h)}:${pad(m)}:${pad(s)}.${pad(ms)}`;
+            } else {
+                document.getElementById('sw-display').innerText = `${pad(m)}:${pad(s)}.${pad(ms)}`;
+            }
+        }
+
+        // --- Background Changer ---
+        function setBackground(bgClass) {
+            document.body.classList.remove('bg-black', 'bg-aurora', 'bg-purple', 'bg-tech');
+            document.body.classList.add(bgClass);
+            document.querySelectorAll('.bg-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-bg') === bgClass);
+            });
+        }
+
+        // --- Fullscreen Logic ---
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => console.log(err));
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        // --- Idle Screensaver Logic ---
+        let idleTimer;
+        function resetIdleTimer() {
+            document.body.classList.remove('idle');
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000);
+        }
+        window.addEventListener('mousemove', resetIdleTimer);
+        window.addEventListener('mousedown', resetIdleTimer);
+        window.addEventListener('keypress', resetIdleTimer);
+        window.addEventListener('touchstart', resetIdleTimer);
+        resetIdleTimer();
+    </script>
+</body>
+</html>
