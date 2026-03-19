@@ -59,13 +59,14 @@
             width: 100%;
         }
 
-        .view { display: none; flex-direction: column; align-items: center; }
+        .view { display: none; flex-direction: column; align-items: center; justify-content: center; }
         .view.active { display: flex; }
 
         .time-text {
             font-size: 12vw;
             line-height: 1;
             letter-spacing: 2px;
+            transition: transform 0.3s ease;
         }
 
         .am-pm { font-size: 4vw; color: #aaa; margin-left: 10px; }
@@ -135,7 +136,18 @@
             backdrop-filter: blur(10px);
         }
 
-        /* Background Themes */
+        /* --- Animations & Themes --- */
+
+        /* Time Up Animation */
+        @keyframes timeUpFlash {
+            0% { color: #ff3333; text-shadow: 0 0 20px #ff0000; transform: scale(1); }
+            50% { color: #ffffff; text-shadow: 0 0 50px #ff0000; transform: scale(1.1); }
+            100% { color: #ff3333; text-shadow: 0 0 20px #ff0000; transform: scale(1); }
+        }
+        .time-up-active {
+            animation: timeUpFlash 0.8s ease-in-out infinite;
+        }
+
         body.bg-black { background-color: #000; }
         body.bg-aurora {
             background: linear-gradient(-45deg, #0a1128, #1c0a28, #0a2818, #000);
@@ -171,17 +183,17 @@
         }
 
         /* Wake lock alert */
-        #wake-lock-status {
+        #status-msg {
             position: absolute;
             top: 5px;
             font-size: 10px;
-            color: #555;
+            color: #888;
         }
     </style>
 </head>
 <body class="bg-black">
 
-    <div id="wake-lock-status">Waiting for tap to lock screen awake...</div>
+    <div id="status-msg">Tap anywhere to unlock Audio & Screen</div>
 
     <!-- Top Navigation -->
     <div class="nav-tabs hide-on-idle">
@@ -208,7 +220,7 @@
             <div class="time-text" id="timer-display">00:00</div>
             <div class="action-controls hide-on-idle">
                 <button onclick="startTimer()">Start</button>
-                <button onclick="pauseTimer()">Pause</button>
+                <button onclick="pauseTimer()">Pause / Stop</button>
                 <button onclick="resetTimer()">Reset</button>
             </div>
         </div>
@@ -235,57 +247,52 @@
     </div>
 
     <script>
-        // --- Wake Lock API (Keep Screen On) ---
+        // --- System Initialization (Wake Lock & Audio) ---
         let wakeLock = null;
-        async function requestWakeLock() {
+        let audioCtx = null;
+
+        async function initSystem() {
+            // 1. Setup Audio Context (required by browsers to happen on user tap)
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            // 2. Setup Wake Lock (Keep screen alive)
             if ('wakeLock' in navigator) {
                 try {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    document.getElementById('wake-lock-status').innerText = "Screen Awake: ON";
-                    setTimeout(() => { document.getElementById('wake-lock-status').style.display = 'none'; }, 3000);
-                    
-                    wakeLock.addEventListener('release', () => {
-                        console.log('Wake Lock released');
-                    });
-                } catch (err) {
-                    console.log(`Wake lock error: ${err.message}`);
-                }
+                    document.getElementById('status-msg').innerText = "Screen & Audio Ready";
+                    setTimeout(() => { document.getElementById('status-msg').style.display = 'none'; }, 3000);
+                } catch (err) {}
             } else {
-                document.getElementById('wake-lock-status').innerText = "Keep-awake not supported on this browser.";
+                document.getElementById('status-msg').innerText = "Keep-awake not supported on this browser.";
+                setTimeout(() => { document.getElementById('status-msg').style.display = 'none'; }, 3000);
             }
         }
         
-        // Browsers require a tap to activate wake lock
-        document.addEventListener('click', () => {
-            if (!wakeLock) requestWakeLock();
-        }, { once: true });
-
-        // Re-request wake lock if tab becomes visible again
+        // Browsers require a tap to activate wake lock and audio
+        document.addEventListener('click', initSystem, { once: true });
         document.addEventListener('visibilitychange', () => {
-            if (wakeLock !== null && document.visibilityState === 'visible') requestWakeLock();
+            if (wakeLock !== null && document.visibilityState === 'visible') navigator.wakeLock.request('screen');
         });
-
 
         // --- View Switching ---
         function switchView(viewId) {
             document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
-            
             document.getElementById(viewId).classList.add('active');
             document.querySelector(`[data-view="${viewId}"]`).classList.add('active');
         }
 
-
         // --- Clock Logic (12hr Hong Kong Time) ---
         function updateClock() {
             const now = new Date();
-            
             const timeOptions = { timeZone: 'Asia/Hong_Kong', hour12: true, hour: 'numeric', minute: '2-digit', second: '2-digit' };
             const fullTimeString = new Intl.DateTimeFormat('en-US', timeOptions).format(now);
-            
-            // Split time and AM/PM
             const [timePart, ampmPart] = fullTimeString.split(' ');
-
             const dateOptions = { timeZone: 'Asia/Hong_Kong', weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
             const dateString = new Intl.DateTimeFormat('en-US', dateOptions).format(now);
 
@@ -296,6 +303,44 @@
         setInterval(updateClock, 1000);
         updateClock();
 
+        // --- Sound Generator Function ---
+        function playBeep() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = "sine"; // smooth digital watch tone
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.setValueAtTime(1200, audioCtx.currentTime + 0.1);
+            
+            // Volume Envelope to prevent popping sounds
+            gain.gain.setValueAtTime(0, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.02);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+            
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        }
+
+        let alarmInterval = null;
+        function triggerAlarm() {
+            // Start flashing animation
+            document.getElementById('timer-display').classList.add('time-up-active');
+            document.getElementById('timer-display').innerText = "TIME UP";
+            
+            // Loop the sound effect
+            playBeep(); // Play immediately
+            alarmInterval = setInterval(() => {
+                playBeep();
+            }, 600); // Repeat every 0.6s
+        }
+
+        function stopAlarm() {
+            clearInterval(alarmInterval);
+            document.getElementById('timer-display').classList.remove('time-up-active');
+        }
 
         // --- Timer Logic ---
         let timerInterval;
@@ -318,14 +363,18 @@
             }
 
             if (timerSecondsRemaining > 0) {
+                stopAlarm(); // Just in case it was ringing
                 isTimerRunning = true;
+                updateTimerDisplay(); // Show initial time
+
                 timerInterval = setInterval(() => {
                     timerSecondsRemaining--;
                     updateTimerDisplay();
+                    
                     if (timerSecondsRemaining <= 0) {
                         clearInterval(timerInterval);
                         isTimerRunning = false;
-                        document.getElementById('timer-display').innerText = "00:00 (Done)";
+                        triggerAlarm(); // FIRE ANIMATION AND SOUND!
                     }
                 }, 1000);
             }
@@ -334,6 +383,7 @@
         function pauseTimer() {
             clearInterval(timerInterval);
             isTimerRunning = false;
+            stopAlarm(); // Stops the alarm and animation if time is up
         }
 
         function resetTimer() {
@@ -341,9 +391,8 @@
             timerSecondsRemaining = 0;
             document.getElementById('timer-min').value = '';
             document.getElementById('timer-sec').value = '';
-            updateTimerDisplay();
+            document.getElementById('timer-display').innerText = "00:00";
         }
-
 
         // --- Stopwatch Logic ---
         let swInterval;
@@ -380,16 +429,14 @@
             updateStopwatchDisplay();
         }
 
-
         // --- Background Changer ---
         function setBackground(bgClass) {
-            document.body.className = bgClass; // Resets all classes and sets bg
+            document.body.className = bgClass; 
             document.querySelectorAll('.bg-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.getAttribute('data-bg') === bgClass);
             });
-            resetIdleTimer(); // Ensure we don't hide immediately
+            resetIdleTimer();
         }
-
 
         // --- Fullscreen Logic ---
         function toggleFullScreen() {
@@ -399,7 +446,6 @@
                 if (document.exitFullscreen) document.exitFullscreen();
             }
         }
-
 
         // --- Screensaver (Idle) Logic ---
         let idleTimer;
